@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Manage - Clothing Portal{% endblock %}
+{% block content %}
+<h1>Manage Clothing</h1>
+
+<div class="row" style="margin-bottom:1rem;align-items:end">
+    <label>Group
+        <select id="group-select">
+            <option value="">Loading groups...</option>
+        </select>
+    </label>
+    <button onclick="loadClothing()">Load</button>
+</div>
+
+<div id="clothing-section" style="display:none">
+    <div class="row" style="margin-bottom:0.75rem;align-items:end;flex-wrap:wrap;gap:0.5rem">
+        <label style="flex:0">
+            <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)"> Select All
+        </label>
+        <label>Price <input type="number" id="bulk-price" value="5" min="0" style="width:100px"></label>
+        <button onclick="bulkAction('onsale')">On Sale</button>
+        <button onclick="bulkAction('offsale')">Off Sale</button>
+        <span style="margin-left:auto;display:flex;gap:0.5rem;align-items:center">
+            <label>Type
+                <select id="filter-type" onchange="applyFilters()">
+                    <option value="">All</option>
+                    <option value="Shirt">Shirt</option>
+                    <option value="Pants">Pants</option>
+                </select>
+            </label>
+            <label>Status
+                <select id="filter-status" onchange="applyFilters()">
+                    <option value="">All</option>
+                    <option value="onsale">On Sale</option>
+                    <option value="offsale">Off Sale</option>
+                </select>
+            </label>
+            <label>Sort
+                <select id="sort-by" onchange="applyFilters()">
+                    <option value="">Default</option>
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                </select>
+            </label>
+        </span>
+    </div>
+
+    <table id="clothing-table">
+        <thead>
+            <tr>
+                <th style="width:30px"></th>
+                <th style="width:90px"></th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Price</th>
+                <th>Status</th>
+                <th>Uploaded</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <div style="margin-top:0.75rem">
+        <button id="load-more-btn" style="display:none" onclick="loadMore()">Load More</button>
+    </div>
+</div>
+
+<div id="progress-section" style="display:none">
+    <h2>Operation Progress</h2>
+    <div id="progress-log"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentGroupId = null;
+let nextCursor = "";
+let allItems = [];
+
+// Load groups
+fetch('/api/groups')
+    .then(r => r.json())
+    .then(groups => {
+        const sel = document.getElementById('group-select');
+        sel.innerHTML = '';
+        if (groups.length === 0) {
+            sel.innerHTML = '<option value="">No groups available</option>';
+            return;
+        }
+        groups.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.id;
+            opt.textContent = g.name;
+            sel.appendChild(opt);
+        });
+    });
+
+function loadClothing() {
+    currentGroupId = document.getElementById('group-select').value;
+    if (!currentGroupId) return;
+    nextCursor = "";
+    allItems = [];
+    document.querySelector('#clothing-table tbody').innerHTML = '';
+    document.getElementById('clothing-section').style.display = '';
+    fetchPage();
+}
+
+function fetchPage() {
+    const url = `/api/manage/clothing?group_id=${currentGroupId}&cursor=${encodeURIComponent(nextCursor)}`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.querySelector('#clothing-table tbody');
+            data.items.forEach(item => {
+                allItems.push(item);
+                const tr = document.createElement('tr');
+                tr.dataset.id = item.id;
+                const typeLabel = item.asset_type === 11 ? 'Shirt' : item.asset_type === 12 ? 'Pants' : 'Other';
+                const priceLabel = item.off_sale ? '-' : (item.price || item.lowest_price || '0');
+                const statusLabel = item.off_sale ? 'Off Sale' : 'On Sale';
+                const statusClass = item.off_sale ? 'error' : 'success';
+
+                tr.dataset.type = typeLabel;
+                tr.dataset.status = item.off_sale ? 'offsale' : 'onsale';
+                tr.dataset.createdUtc = item.created_utc || '';
+
+                const thumbHtml = item.thumbnail
+                    ? `<img src="${item.thumbnail}" style="width:80px;height:80px;object-fit:contain;border-radius:4px">`
+                    : '';
+                const uploadedLabel = item.created_utc
+                    ? new Date(item.created_utc).toLocaleDateString()
+                    : '';
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="item-cb" data-id="${item.id}" data-group-id="${item.group_id}" data-cid="${item.collectible_item_id}" data-price="${item.price || item.lowest_price || 5}" data-name="${escapeHtml(item.name)}"></td>
+                    <td>${thumbHtml}</td>
+                    <td><a href="https://www.roblox.com/catalog/${item.id}" target="_blank">${escapeHtml(item.name)}</a></td>
+                    <td>${typeLabel}</td>
+                    <td>${priceLabel}</td>
+                    <td class="${statusClass}">${statusLabel}</td>
+                    <td style="white-space:nowrap">${uploadedLabel}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            nextCursor = data.next_cursor;
+            document.getElementById('load-more-btn').style.display = nextCursor ? '' : 'none';
+            applyFilters();
+        });
+}
+
+function applyFilters() {
+    const typeFilter = document.getElementById('filter-type').value;
+    const statusFilter = document.getElementById('filter-status').value;
+    const sortBy = document.getElementById('sort-by').value;
+    const tbody = document.querySelector('#clothing-table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    if (sortBy) {
+        rows.sort((a, b) => {
+            const da = a.dataset.createdUtc || '';
+            const db = b.dataset.createdUtc || '';
+            return sortBy === 'newest' ? db.localeCompare(da) : da.localeCompare(db);
+        });
+        rows.forEach(tr => tbody.appendChild(tr));
+    }
+
+    rows.forEach(tr => {
+        const typeMatch = !typeFilter || tr.dataset.type === typeFilter;
+        const statusMatch = !statusFilter || tr.dataset.status === statusFilter;
+        tr.style.display = typeMatch && statusMatch ? '' : 'none';
+    });
+}
+
+function loadMore() {
+    fetchPage();
+}
+
+function toggleSelectAll(cb) {
+    document.querySelectorAll('.item-cb').forEach(c => {
+        const tr = c.closest('tr');
+        if (tr.style.display !== 'none') c.checked = cb.checked;
+    });
+}
+
+function getSelectedItems() {
+    return Array.from(document.querySelectorAll('.item-cb:checked')).map(c => ({
+        id: c.dataset.id,
+        group_id: c.dataset.groupId,
+        collectible_item_id: c.dataset.cid,
+        price: c.dataset.price,
+        name: c.dataset.name,
+    }));
+}
+
+function escapeHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+function bulkAction(action) {
+    const items = getSelectedItems();
+    if (items.length === 0) { alert('Select at least one item'); return; }
+
+    const price = parseInt(document.getElementById('bulk-price').value) || 5;
+    const body = { items: items };
+    if (action === 'onsale') body.price = price;
+
+    fetch(`/api/manage/${action}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    })
+    .then(r => r.json())
+    .then(data => {
+        const section = document.getElementById('progress-section');
+        section.style.display = '';
+        const log = document.getElementById('progress-log');
+        log.innerHTML = '';
+
+        const evtSource = new EventSource(`/api/manage/progress/${data.op_id}`);
+        evtSource.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'done') {
+                evtSource.close();
+                const p = document.createElement('p');
+                p.textContent = 'Done!';
+                p.className = 'success';
+                log.appendChild(p);
+                loadClothing();
+                return;
+            }
+            const p = document.createElement('p');
+            const statusClass = msg.status === 'done' ? 'success' : msg.status.startsWith('failed') ? 'error' : '';
+            p.className = statusClass;
+            p.textContent = `${msg.name}: ${msg.status}`;
+            log.appendChild(p);
+        };
+        evtSource.onerror = () => evtSource.close();
+    });
+}
+</script>
+{% endblock %}

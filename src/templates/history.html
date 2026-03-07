@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}History - Clothing Portal{% endblock %}
+{% block content %}
+<h1>Upload History</h1>
+{% if uploads %}
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>User</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Group</th>
+            <th>Price</th>
+            <th>Status</th>
+            <th>Asset ID</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for u in uploads %}
+        <tr>
+            <td>{{ u.created_at }}</td>
+            <td>{{ u.username }}</td>
+            <td>{{ u.name }}</td>
+            <td>{{ "Shirt" if u.asset_type == 11 else "Pants" }}</td>
+            <td>{{ u.group_id }}</td>
+            <td>{{ u.price }}</td>
+            <td class="{{ 'success' if u.status in ('onsale', 'uploaded') else 'error' if u.status == 'failed' else '' }}">{{ u.status }}</td>
+            <td>{% if u.asset_id %}<a href="https://www.roblox.com/catalog/{{ u.asset_id }}" target="_blank">{{ u.asset_id }}</a>{% else %}-{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No uploads yet.</p>
+{% endif %}
+{% endblock %}

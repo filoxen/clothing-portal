@@ -1,0 +1,17 @@
+[project]
+name = "clothing-portal"
+version = "0.1.1"
+description = "Web UI for batch uploading Roblox clothing to groups"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.126.0",
+    "python-dotenv>=1.2.1",
+    "rbx-upload",
+    "bcrypt>=4.0.0",
+    "itsdangerous>=2.0.0",
+    "python-multipart>=0.0.6",
+    "jinja2>=3.1.0",
+    "httpx>=0.27.0",
+    "aiosqlite>=0.20.0",
+    "sse-starlette>=2.0.0",
+]

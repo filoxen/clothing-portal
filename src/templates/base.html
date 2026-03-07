@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Clothing Portal{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    {% if user %}
+    <nav>
+        <a href="/upload">Upload</a>
+        <a href="/manage">Manage</a>
+        <a href="/history">History</a>
+        {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
+        <span class="nav-right">{{ user.username }} &middot; <a href="/logout">Logout</a></span>
+    </nav>
+    {% endif %}
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

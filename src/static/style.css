@@ -1,0 +1,94 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.5;
+}
+
+nav {
+    background: #222;
+    color: #fff;
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+nav a { color: #ccc; text-decoration: none; }
+nav a:hover { color: #fff; }
+.nav-right { margin-left: auto; color: #999; }
+
+main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+
+h1 { margin-bottom: 1rem; }
+h2 { margin: 1.5rem 0 0.75rem; }
+
+fieldset {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: #fff;
+}
+legend { font-weight: 600; padding: 0 0.5rem; }
+
+label { display: block; margin-bottom: 0.5rem; font-size: 0.9rem; }
+input, select, textarea {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font: inherit;
+    margin-top: 0.2rem;
+}
+input[type="checkbox"] { display: inline; width: auto; }
+input[type="file"] { padding: 0.3rem; }
+
+.row { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; }
+.row > label { flex: 1; min-width: 150px; }
+
+button {
+    padding: 0.5rem 1.2rem;
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    margin-top: 0.5rem;
+}
+button:hover { background: #555; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.danger { background: #c33; }
+button.danger:hover { background: #a22; }
+
+.item-row {
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    background: #fafafa;
+}
+.remove-btn { background: #999; font-size: 0.85rem; padding: 0.3rem 0.8rem; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; }
+th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+th { background: #f0f0f0; font-weight: 600; font-size: 0.85rem; }
+td { font-size: 0.9rem; }
+
+.error { color: #c33; }
+.success { color: #2a2; }
+
+.login-box {
+    max-width: 360px;
+    margin: 4rem auto;
+    background: #fff;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.login-box h1 { text-align: center; margin-bottom: 1.5rem; }
+
+.checkbox { display: flex; align-items: center; gap: 0.5rem; }

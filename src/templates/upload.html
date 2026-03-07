@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Upload - Clothing Portal{% endblock %}
+{% block content %}
+<h1>Batch Upload</h1>
+
+<form id="upload-form">
+    <fieldset>
+        <legend>Template Settings</legend>
+        <div class="row">
+            <label>Group
+                <select name="group_id" id="group-select" required>
+                    <option value="">Loading groups...</option>
+                </select>
+            </label>
+            <label>Asset Type
+                <select name="asset_type" id="asset-type" required>
+                    <option value="11">Shirt</option>
+                    <option value="12">Pants</option>
+                </select>
+            </label>
+            <label>Price (Robux)
+                <input type="number" name="price" id="price" value="5" min="0" required>
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>Items</legend>
+        <div id="items-list">
+            <div class="item-row" data-index="0">
+                <label>Name <input type="text" name="items[0].name" required></label>
+                <label>Description <textarea name="items[0].description" rows="2"></textarea></label>
+                <label>Image <input type="file" name="items[0].image" accept="image/png" required></label>
+                <button type="button" class="remove-btn" onclick="removeItem(this)">Remove</button>
+            </div>
+        </div>
+        <button type="button" id="add-item-btn" onclick="addItem()">+ Add Item</button>
+    </fieldset>
+
+    <button type="submit" id="submit-btn">Upload All</button>
+</form>
+
+<div id="progress-section" style="display:none">
+    <h2>Upload Progress</h2>
+    <table id="progress-table">
+        <thead>
+            <tr><th>#</th><th>Name</th><th>Status</th><th>Asset ID</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let itemIndex = 1;
+
+function addItem() {
+    const list = document.getElementById('items-list');
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.dataset.index = itemIndex;
+    div.innerHTML = `
+        <label>Name <input type="text" name="items[${itemIndex}].name" required></label>
+        <label>Description <textarea name="items[${itemIndex}].description" rows="2"></textarea></label>
+        <label>Image <input type="file" name="items[${itemIndex}].image" accept="image/png" required></label>
+        <button type="button" class="remove-btn" onclick="removeItem(this)">Remove</button>
+    `;
+    list.appendChild(div);
+    itemIndex++;
+}
+
+function removeItem(btn) {
+    const rows = document.querySelectorAll('.item-row');
+    if (rows.length > 1) {
+        btn.closest('.item-row').remove();
+    }
+}
+
+// Load groups
+fetch('/api/groups')
+    .then(r => r.json())
+    .then(groups => {
+        const sel = document.getElementById('group-select');
+        sel.innerHTML = '';
+        if (groups.length === 0) {
+            sel.innerHTML = '<option value="">No groups available</option>';
+            return;
+        }
+        groups.forEach(g => {
+            const opt = document.createElement('option');
+            opt.value = g.id;
+            opt.textContent = g.name;
+            sel.appendChild(opt);
+        });
+    })
+    .catch(() => {
+        document.getElementById('group-select').innerHTML = '<option value="">Failed to load groups</option>';
+    });
+
+// Submit handler
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const submitBtn = document.getElementById('submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('group_id', form.group_id.value);
+    formData.append('asset_type', form.asset_type.value);
+    formData.append('price', form.price.value);
+
+    // Collect items
+    const rows = document.querySelectorAll('.item-row');
+    const names = [];
+    const descriptions = [];
+    rows.forEach(row => {
+        const idx = row.dataset.index;
+        names.push(row.querySelector(`[name="items[${idx}].name"]`).value);
+        descriptions.push(row.querySelector(`[name="items[${idx}].description"]`).value || '');
+        formData.append('images', row.querySelector(`[name="items[${idx}].image"]`).files[0]);
+    });
+    formData.append('names', JSON.stringify(names));
+    formData.append('descriptions', JSON.stringify(descriptions));
+
+    try {
+        const res = await fetch('/api/upload/batch', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.detail || 'Upload failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Upload All';
+            return;
+        }
+
+        // Show progress
+        const section = document.getElementById('progress-section');
+        section.style.display = '';
+        const tbody = document.querySelector('#progress-table tbody');
+        tbody.innerHTML = '';
+        names.forEach((name, i) => {
+            const tr = document.createElement('tr');
+            tr.id = `progress-row-${i}`;
+            tr.innerHTML = `<td>${i + 1}</td><td>${name}</td><td class="status">Pending</td><td class="asset-id">-</td>`;
+            tbody.appendChild(tr);
+        });
+
+        // SSE for progress
+        const evtSource = new EventSource(`/api/upload/progress/${data.batch_id}`);
+        evtSource.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'done') {
+                evtSource.close();
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Upload All';
+                return;
+            }
+            const row = document.getElementById(`progress-row-${msg.index}`);
+            if (row) {
+                row.querySelector('.status').textContent = msg.status;
+                if (msg.asset_id) {
+                    row.querySelector('.asset-id').textContent = msg.asset_id;
+                }
+                if (msg.status === 'failed') {
+                    row.querySelector('.status').classList.add('error');
+                } else if (msg.status === 'onsale' || msg.status === 'uploaded') {
+                    row.querySelector('.status').classList.add('success');
+                }
+            }
+        };
+        evtSource.onerror = () => {
+            evtSource.close();
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Upload All';
+        };
+    } catch (err) {
+        alert('Error: ' + err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Upload All';
+    }
+});
+</script>
+{% endblock %}
