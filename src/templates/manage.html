@@ -38,7 +38,7 @@
             <label>Sort
                 <select id="sort-by" onchange="applyFilters()">
                     <option value="">Default</option>
-                    <option value="newest">Newest First</option>
+                    <option value="newest" selected>Newest First</option>
                     <option value="oldest">Oldest First</option>
                 </select>
             </label>
@@ -60,9 +60,6 @@
         <tbody></tbody>
     </table>
 
-    <div style="margin-top:0.75rem">
-        <button id="load-more-btn" style="display:none" onclick="loadMore()">Load More</button>
-    </div>
 </div>
 
 <div id="progress-section" style="display:none">
@@ -111,6 +108,7 @@ function fetchPage() {
         .then(r => r.json())
         .then(data => {
             const tbody = document.querySelector('#clothing-table tbody');
+            const frag = document.createDocumentFragment();
             data.items.forEach(item => {
                 allItems.push(item);
                 const tr = document.createElement('tr');
@@ -139,12 +137,15 @@ function fetchPage() {
                     <td class="${statusClass}">${statusLabel}</td>
                     <td style="white-space:nowrap">${uploadedLabel}</td>
                 `;
-                tbody.appendChild(tr);
+                frag.appendChild(tr);
             });
+            tbody.appendChild(frag);
 
             nextCursor = data.next_cursor;
-            document.getElementById('load-more-btn').style.display = nextCursor ? '' : 'none';
             applyFilters();
+            if (nextCursor) {
+                fetchPage();
+            }
         });
 }
 
@@ -169,10 +170,6 @@ function applyFilters() {
         const statusMatch = !statusFilter || tr.dataset.status === statusFilter;
         tr.style.display = typeMatch && statusMatch ? '' : 'none';
     });
-}
-
-function loadMore() {
-    fetchPage();
 }
 
 function toggleSelectAll(cb) {

@@ -1,3 +1,6 @@
+import asyncio
+import base64
+import json
 import logging
 import time
 
@@ -9,6 +12,8 @@ from src.config import ROBLOSECURITY_TOKEN, PUBLISHER_USER_ID, ROBLOX_PROXY
 
 _groups_cache: dict[str, tuple[float, list]] = {}
 CACHE_TTL = 300  # 5 minutes
+MAX_RETRIES = 3
+RETRY_DELAY = 3.0
 
 
 async def get_uploadable_groups() -> list[dict]:
@@ -69,56 +74,109 @@ async def _get_csrf_token(client: httpx.AsyncClient) -> str:
     return csrf
 
 
+async def _retry(coro_fn, retries=MAX_RETRIES):
+    for attempt in range(retries):
+        try:
+            return await coro_fn()
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+
+
+def _encode_cursor(state: dict) -> str:
+    return base64.b64encode(json.dumps(state).encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> dict:
+    return json.loads(base64.b64decode(cursor).decode())
+
+
 async def fetch_group_clothing(group_id: int, cursor: str = "") -> dict:
-    url = _proxy_url("https://catalog.roblox.com/v1/search/items/details")
-    params = {
-        "Category": 3,
-        "CreatorType": 2,
-        "CreatorTargetId": group_id,
-        "IncludeNotForSale": "true",
-        "Limit": 30,
-    }
-    if cursor:
-        params["Cursor"] = cursor
+    state = _decode_cursor(cursor) if cursor else {"type": "Shirt", "cursor": ""}
+    asset_type = state["type"]
+    inner_cursor = state["cursor"]
 
     async with httpx.AsyncClient(cookies=_auth_cookies()) as client:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        data = resp.json()
+        # Step 1: get a page of asset IDs from itemconfiguration
+        id_params = {"assetType": asset_type, "groupId": group_id, "limit": 100}
+        if inner_cursor:
+            id_params["cursor"] = inner_cursor
 
-        raw_items = data.get("data", [])
-        asset_ids = [item.get("id") for item in raw_items if item.get("id")]
+        async def _fetch_ids():
+            resp = await client.get(
+                _proxy_url("https://itemconfiguration.roblox.com/v1/creations/get-assets"),
+                params=id_params,
+            )
+            resp.raise_for_status()
+            return resp.json()
 
-        thumbnails = {}
-        if asset_ids:
-            thumb_resp = await client.get(
+        id_data = await _retry(_fetch_ids)
+        asset_ids = [item["assetId"] for item in id_data.get("data", [])]
+        next_inner_cursor = id_data.get("nextPageCursor", "")
+
+        if not asset_ids:
+            if asset_type == "Shirt":
+                return {"items": [], "next_cursor": _encode_cursor({"type": "Pants", "cursor": ""})}
+            return {"items": [], "next_cursor": ""}
+
+        # Step 2+3: fetch details and thumbnails concurrently
+        async def _fetch_details():
+            csrf = await _get_csrf_token(client)
+            resp = await client.post(
+                _proxy_url("https://catalog.roblox.com/v1/catalog/items/details"),
+                json={"items": [{"itemType": "Asset", "id": i} for i in asset_ids]},
+                headers={"X-CSRF-TOKEN": csrf},
+            )
+            resp.raise_for_status()
+            by_id = {}
+            for item in resp.json().get("data", []):
+                by_id[item["id"]] = item
+            return by_id
+
+        async def _fetch_thumbnails():
+            resp = await client.get(
                 _proxy_url("https://thumbnails.roblox.com/v1/assets"),
                 params={"assetIds": ",".join(str(i) for i in asset_ids), "returnPolicy": "PlaceHolder", "size": "150x150", "format": "Png", "isCircular": "false"},
             )
-            if thumb_resp.status_code == 200:
-                for t in thumb_resp.json().get("data", []):
-                    thumbnails[t["targetId"]] = t.get("imageUrl", "")
+            resp.raise_for_status()
+            thumbs = {}
+            for t in resp.json().get("data", []):
+                thumbs[t["targetId"]] = t.get("imageUrl", "")
+            return thumbs
+
+        details_by_id, thumbnails = await asyncio.gather(
+            _retry(_fetch_details), _retry(_fetch_thumbnails),
+        )
 
     items = []
-    for item in raw_items:
-        asset_id = item.get("id")
+    asset_type_id = 11 if asset_type == "Shirt" else 12
+    for asset_id in asset_ids:
+        detail = details_by_id.get(asset_id, {})
+        price = detail.get("price")
+        lowest_price = detail.get("lowestPrice")
         items.append({
             "id": asset_id,
             "group_id": group_id,
-            "collectible_item_id": item.get("collectibleItemId", ""),
-            "name": item.get("name", ""),
-            "asset_type": item.get("assetType"),
-            "price": item.get("price"),
-            "lowest_price": item.get("lowestPrice"),
-            "off_sale": item.get("priceStatus") == "Off Sale" or (item.get("price") is None and item.get("lowestPrice") is None),
+            "collectible_item_id": detail.get("collectibleItemId", ""),
+            "name": detail.get("name", ""),
+            "asset_type": detail.get("assetType", asset_type_id),
+            "price": price,
+            "lowest_price": lowest_price,
+            "off_sale": price is None and lowest_price is None,
             "thumbnail": thumbnails.get(asset_id, ""),
-            "created_utc": item.get("itemCreatedUtc", ""),
+            "created_utc": detail.get("itemCreatedUtc", ""),
         })
 
-    return {
-        "items": items,
-        "next_cursor": data.get("nextPageCursor") or "",
-    }
+    # Build next cursor
+    if next_inner_cursor:
+        next_cursor = _encode_cursor({"type": asset_type, "cursor": next_inner_cursor})
+    elif asset_type == "Shirt":
+        next_cursor = _encode_cursor({"type": "Pants", "cursor": ""})
+    else:
+        next_cursor = ""
+
+    return {"items": items, "next_cursor": next_cursor}
 
 
 _SALE_HEADERS = {
